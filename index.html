@@ -196,8 +196,75 @@
             return markArea;
         }
 
+        function getBottomFishingPoints(chartData, ma60Data, ma240Data) {
+            let markPointData = [];
+            let state = 1; 
+            let peakIdx = 0;
+            let troughIdx = 0;
+            const REVERSAL = 0.05; 
+            
+            for (let i = 0; i < chartData.values.length; i++) {
+                let high = chartData.values[i][3];
+                let low = chartData.values[i][2];
+                let close = chartData.values[i][1];
+                let date = chartData.categoryData[i];
+                
+                if (state === 1) { 
+                    if (high > chartData.values[peakIdx][3]) {
+                        peakIdx = i; 
+                    }
+                    if ((chartData.values[peakIdx][3] - close) / chartData.values[peakIdx][3] >= REVERSAL) {
+                        state = -1;
+                        troughIdx = i; 
+                    }
+                } else { 
+                    if (low < chartData.values[troughIdx][2]) {
+                        troughIdx = i; 
+                    }
+                    if ((close - chartData.values[troughIdx][2]) / chartData.values[troughIdx][2] >= REVERSAL) {
+                        state = 1;
+                        peakIdx = i; 
+                    }
+                }
+                
+                let currentPeak = chartData.values[peakIdx][3];
+                let drop = (currentPeak - low) / currentPeak;
+                
+                let isDrop10 = drop >= 0.10;
+                let ma60 = parseFloat(ma60Data[i]);
+                let ma240 = parseFloat(ma240Data[i]);
+                
+                let nearMA60 = !isNaN(ma60) && (low <= ma60 * 1.02);
+                let nearMA240 = !isNaN(ma240) && (low <= ma240 * 1.02);
+                let isNearMA = nearMA60 || nearMA240;
+                
+                let vix = chartData.vixData[i];
+                let rsi = chartData.rsiData[i];
+                let isVixHigh = vix > 28;
+                let isRsiLow = rsi <= 42;
+                
+                if (isDrop10 && isNearMA && isVixHigh && isRsiLow) {
+                    if (markPointData.length === 0 || i - markPointData[markPointData.length - 1].index > 5) {
+                        markPointData.push({
+                            name: '準備抄底',
+                            coord: [date, low],
+                            value: '抄底',
+                            index: i,
+                            itemStyle: { color: '#eab308' },
+                            symbolSize: 45,
+                            symbolOffset: [0, 10],
+                            label: { fontSize: 10, color: '#000', fontWeight: 'bold' }
+                        });
+                    }
+                }
+            }
+            return markPointData;
+        }
+
         function renderChart(data, titleText) {
             const chartData = splitData(data);
+            const ma60Data = calculateMA(60, chartData.values);
+            const ma240Data = calculateMA(240, chartData.values);
             
             const option = {
                 backgroundColor: '#121212',
@@ -272,12 +339,16 @@
                                 color: 'rgba(34, 197, 94, 0.2)' // 透明綠色
                             },
                             data: getDropRegions(chartData)
+                        },
+                        markPoint: {
+                            symbol: 'pin',
+                            data: getBottomFishingPoints(chartData, ma60Data, ma240Data)
                         }
                     },
                     {
                         name: '季線 (MA60)',
                         type: 'line',
-                        data: calculateMA(60, chartData.values),
+                        data: ma60Data,
                         smooth: true,
                         showSymbol: false,
                         lineStyle: { width: 1.5, color: '#facc15' } // Yellow
@@ -285,7 +356,7 @@
                     {
                         name: '年線 (MA240)',
                         type: 'line',
-                        data: calculateMA(240, chartData.values),
+                        data: ma240Data,
                         smooth: true,
                         showSymbol: false,
                         lineStyle: { width: 1.5, color: '#ec4899' } // Pink
