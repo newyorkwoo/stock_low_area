@@ -229,15 +229,27 @@
                 
                 let isNormalBottom = isDrop10 && isNearMA && isVixHigh && isRsiLow;
                 let isExtremePanic = vix > 35;
+                let isExtremeOversold = rsi < 38;
                 
-                if (isNormalBottom || isExtremePanic) {
+                if (isNormalBottom || isExtremePanic || isExtremeOversold) {
                     if (markPointData.length === 0 || i - markPointData[markPointData.length - 1].index > 5) {
+                        let pointName = '準備抄底';
+                        let pointColor = '#eab308'; // Gold
+                        
+                        if (isExtremePanic) {
+                            pointName = '極端恐慌抄底';
+                            pointColor = '#ef4444'; // Red
+                        } else if (isExtremeOversold) {
+                            pointName = '極度超賣抄底';
+                            pointColor = '#3b82f6'; // Blue
+                        }
+                        
                         markPointData.push({
-                            name: isExtremePanic ? '極端恐慌抄底' : '準備抄底',
+                            name: pointName,
                             coord: [date, low],
                             value: '抄底',
                             index: i,
-                            itemStyle: { color: isExtremePanic ? '#ef4444' : '#eab308' }, // Red for VIX>35, Gold for normal
+                            itemStyle: { color: pointColor },
                             symbolSize: 45,
                             symbolOffset: [0, 15],
                             label: { fontSize: 10, color: '#000', fontWeight: 'bold' }
