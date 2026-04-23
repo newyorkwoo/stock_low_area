@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env/
+.venv/
+
+# Data and Outputs
+*.json
+output_charts/
+*.png
+*.jpg
+*.csv
+*.xlsx
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+.DS_Store
