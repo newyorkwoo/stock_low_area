@@ -227,14 +227,17 @@
                 let isVixHigh = vix > 28;
                 let isRsiLow = rsi <= 42;
                 
-                if (isDrop10 && isNearMA && isVixHigh && isRsiLow) {
+                let isNormalBottom = isDrop10 && isNearMA && isVixHigh && isRsiLow;
+                let isExtremePanic = vix > 35;
+                
+                if (isNormalBottom || isExtremePanic) {
                     if (markPointData.length === 0 || i - markPointData[markPointData.length - 1].index > 5) {
                         markPointData.push({
-                            name: '準備抄底',
+                            name: isExtremePanic ? '極端恐慌抄底' : '準備抄底',
                             coord: [date, low],
                             value: '抄底',
                             index: i,
-                            itemStyle: { color: '#eab308' },
+                            itemStyle: { color: isExtremePanic ? '#ef4444' : '#eab308' }, // Red for VIX>35, Gold for normal
                             symbolSize: 45,
                             symbolOffset: [0, 15],
                             label: { fontSize: 10, color: '#000', fontWeight: 'bold' }
