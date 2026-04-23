@@ -198,39 +198,23 @@
 
         function getBottomFishingPoints(chartData, ma60Data, ma240Data) {
             let markPointData = [];
-            let state = 1; 
-            let peakIdx = 0;
-            let troughIdx = 0;
-            const REVERSAL = 0.05; 
             
             for (let i = 0; i < chartData.values.length; i++) {
-                let high = chartData.values[i][3];
                 let low = chartData.values[i][2];
-                let close = chartData.values[i][1];
                 let date = chartData.categoryData[i];
                 
-                if (state === 1) { 
-                    if (high > chartData.values[peakIdx][3]) {
-                        peakIdx = i; 
-                    }
-                    if ((chartData.values[peakIdx][3] - close) / chartData.values[peakIdx][3] >= REVERSAL) {
-                        state = -1;
-                        troughIdx = i; 
-                    }
-                } else { 
-                    if (low < chartData.values[troughIdx][2]) {
-                        troughIdx = i; 
-                    }
-                    if ((close - chartData.values[troughIdx][2]) / chartData.values[troughIdx][2] >= REVERSAL) {
-                        state = 1;
-                        peakIdx = i; 
+                // Find highest high in the last 120 days (approx. half year)
+                let startIndex = Math.max(0, i - 120);
+                let recentHigh = 0;
+                for (let j = startIndex; j <= i; j++) {
+                    if (chartData.values[j][3] > recentHigh) {
+                        recentHigh = chartData.values[j][3];
                     }
                 }
                 
-                let currentPeak = chartData.values[peakIdx][3];
-                let drop = (currentPeak - low) / currentPeak;
-                
+                let drop = (recentHigh - low) / recentHigh;
                 let isDrop10 = drop >= 0.10;
+                
                 let ma60 = parseFloat(ma60Data[i]);
                 let ma240 = parseFloat(ma240Data[i]);
                 
@@ -252,7 +236,7 @@
                             index: i,
                             itemStyle: { color: '#eab308' },
                             symbolSize: 45,
-                            symbolOffset: [0, 10],
+                            symbolOffset: [0, 15],
                             label: { fontSize: 10, color: '#000', fontWeight: 'bold' }
                         });
                     }
