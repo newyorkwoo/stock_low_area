@@ -6,35 +6,27 @@
     <title>歷史指數互動式 K 線圖</title>
     <style>
         body {
-            margin: 0;
-            padding: 0;
+            margin: 0; padding: 0;
             background-color: #121212;
             color: #ffffff;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             overflow-y: auto;
         }
-        #app {
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
+        #app { display: flex; flex-direction: column; min-height: 100vh; }
         header {
-            padding: 15px 24px;
+            padding: 10px 20px;
             background: linear-gradient(180deg, #1e1e1e 0%, #151515 100%);
             border-bottom: 1px solid #333;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
         }
-        h1 {
-            margin: 0;
-            font-size: 20px;
-            font-weight: 500;
-            letter-spacing: 1px;
-            color: #e0e0e0;
-        }
+        h1 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: 1px; color: #e0e0e0; }
+
         .controls select {
-            padding: 8px 16px;
+            padding: 6px 14px;
             background-color: #2b2b2b;
             color: #fff;
             border: 1px solid #444;
@@ -43,412 +35,480 @@
             cursor: pointer;
             transition: all 0.2s ease;
         }
-        .controls select:hover {
-            background-color: #383838;
-            border-color: #555;
-        }
-        #chart-container {
-            width: 100%;
-            height: max(600px, calc(100vh - 60px));
-        }
+        .controls select:hover { background-color: #383838; border-color: #555; }
+        #chart-container { width: 100%; height: max(660px, calc(100vh - 72px)); }
         #loading {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(18,18,18,0.85);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 20px;
-            color: #2563eb;
-            z-index: 100;
-            font-weight: 600;
-            letter-spacing: 2px;
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(18,18,18,0.88);
+            display: flex; justify-content: center; align-items: center;
+            font-size: 18px; color: #2563eb; z-index: 100;
+            font-weight: 600; letter-spacing: 2px; flex-direction: column; gap: 8px;
         }
+        #loading small { font-size: 12px; color: #888; font-weight: 400; letter-spacing: 0; }
     </style>
-    <!-- Include ECharts -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 </head>
 <body>
-    <div id="app">
-        <header>
-            <h1>歷史指數互動式看板</h1>
-            <div class="controls">
-                <select id="marketSelector">
-                    <option value="twii">台灣加權指數 (^TWII)</option>
-                    <option value="nasdaq">那斯達克綜合指數 (^IXIC)</option>
-                </select>
-            </div>
-        </header>
-        <div id="chart-container"></div>
-    </div>
-    <div id="loading">載入資料中，請稍候...</div>
+<div id="app">
+    <header>
+        <h1>歷史指數互動式看板</h1>
 
-    <script>
-        const chartDom = document.getElementById('chart-container');
-        const myChart = echarts.init(chartDom, 'dark', { renderer: 'canvas' });
-        let currentChartData = null;
+        <div class="controls">
+            <select id="marketSelector">
+                <option value="twii">台灣加權指數 (^TWII)</option>
+                <option value="nasdaq">那斯達克綜合指數 (^IXIC)</option>
+            </select>
+        </div>
+    </header>
+    <div id="chart-container"></div>
+</div>
+<div id="loading">
+    <span>載入資料中，請稍候...</span>
+    <small>首次計算新指標需要數秒</small>
+</div>
 
-        // Colors setup
-        const upColor = '#ec0000';
-        const upBorderColor = '#8A0000';
-        const downColor = '#00da3c';
-        const downBorderColor = '#008F28';
-        
-        function splitData(rawData) {
-            let categoryData = [];
-            let values = [];
-            let vixData = [];
-            let rsiData = [];
-            
-            for (let i = 0; i < rawData.length; i++) {
-                // Expected parsing format from python JSON:
-                // [date, open, close, low, high, volume, vix, rsi]
-                const item = rawData[i];
-                categoryData.push(item[0]); // date
-                values.push([item[1], item[2], item[3], item[4]]); // [open, close, low, high]
-                vixData.push(item[6]); // vix
-                rsiData.push(item[7]); // rsi
-            }
-            return {
-                categoryData: categoryData,
-                values: values,
-                vixData: vixData,
-                rsiData: rsiData
-            };
+<script>
+    const chartDom = document.getElementById('chart-container');
+    const myChart = echarts.init(chartDom, 'dark', { renderer: 'canvas' });
+
+    const upColor = '#ec0000', upBorderColor = '#8A0000';
+    const downColor = '#00da3c', downBorderColor = '#008F28';
+
+    // ─── 資料解析 ──────────────────────────────────────────────────────────────
+    function splitData(rawData) {
+        let categoryData = [], values = [], vixData = [], rsiData = [];
+        for (let i = 0; i < rawData.length; i++) {
+            const item = rawData[i];
+            categoryData.push(item[0]);
+            values.push([item[1], item[2], item[3], item[4]]);
+            vixData.push(item[6]);
+            rsiData.push(item[7]);
         }
+        return { categoryData, values, vixData, rsiData };
+    }
 
-        function calculateMA(dayCount, data) {
-            let result = [];
-            for (let i = 0, len = data.length; i < len; i++) {
-                if (i < dayCount - 1) {
-                    result.push('-');
-                    continue;
-                }
-                let sum = 0;
-                for (let j = 0; j < dayCount; j++) {
-                    sum += data[i - j][1]; // index 1 is close price
-                }
-                result.push((sum / dayCount).toFixed(2));
-            }
-            return result;
+    // ─── 移動平均 ──────────────────────────────────────────────────────────────
+    function calculateMA(dayCount, data) {
+        let result = [];
+        for (let i = 0, len = data.length; i < len; i++) {
+            if (i < dayCount - 1) { result.push('-'); continue; }
+            let sum = 0;
+            for (let j = 0; j < dayCount; j++) sum += data[i - j][1];
+            result.push((sum / dayCount).toFixed(2));
         }
+        return result;
+    }
 
-        // 演算法升級：採用純正的「波段 (ZigZag)」辨識邏輯，不只看歷史新高，也抓出所有局部反彈後再殺的次級波段。
-        // 反轉門檻設為 5% (只要反彈超過 5% 即確認前一個下跌段結束)。
-        function getDropRegions(chartData) {
-            let markArea = [];
-            let state = 1; // 1 代表上升波段, -1 代表下降波段
-            let peakIdx = 0;
-            let troughIdx = 0;
-            const REVERSAL = 0.05; // 5% 反向變動即認定波段轉折
-            
-            for (let i = 0; i < chartData.values.length; i++) {
-                let high = chartData.values[i][3];
-                let low = chartData.values[i][2];
-                let close = chartData.values[i][1];
-                
-                if (state === 1) { 
-                    // 處於上升波段，尋找當地最高點
-                    if (high > chartData.values[peakIdx][3]) {
-                        peakIdx = i; 
+    // ─── 波段高低點標示 ──────────────────────────────────────────────────────────────
+    function getSwingRegions(chartData) {
+        let markArea = [];
+        let markPoint = [];
+        let state = 1, peakIdx = 0, troughIdx = 0;
+        const REVERSAL = 0.05; // 5% 反轉
+        for (let i = 0; i < chartData.values.length; i++) {
+            let high = chartData.values[i][3], low = chartData.values[i][2], close = chartData.values[i][1];
+            if (state === 1) {
+                if (high > chartData.values[peakIdx][3]) peakIdx = i;
+                if ((chartData.values[peakIdx][3] - close) / chartData.values[peakIdx][3] >= REVERSAL) {
+                    state = -1; troughIdx = i;
+                }
+            } else {
+                if (low < chartData.values[troughIdx][2]) troughIdx = i;
+                if ((close - chartData.values[troughIdx][2]) / chartData.values[troughIdx][2] >= REVERSAL) {
+                    let drop = (chartData.values[peakIdx][3] - chartData.values[troughIdx][2]) / chartData.values[peakIdx][3];
+                    if (drop >= 0.08) { // 跌幅大於 8% 的波段
+                        markArea.push([
+                            { xAxis: chartData.categoryData[peakIdx], itemStyle: { color: 'rgba(239, 68, 68, 0.15)' } },
+                            { xAxis: chartData.categoryData[troughIdx] }
+                        ]);
+                        markPoint.push({
+                            name: '波段高點',
+                            coord: [chartData.categoryData[peakIdx], chartData.values[peakIdx][3]],
+                            value: chartData.values[peakIdx][3].toFixed(0),
+                            symbol: 'path://M12 2L22 20H2L12 2Z',
+                            symbolSize: 8,
+                            symbolRotate: 180,
+                            symbolOffset: [0, -15],
+                            itemStyle: { color: '#facc15' },
+                            label: { color: '#facc15', position: 'top', fontSize: 10 }
+                        });
+                        markPoint.push({
+                            name: '波段低點',
+                            coord: [chartData.categoryData[troughIdx], chartData.values[troughIdx][2]],
+                            value: chartData.values[troughIdx][2].toFixed(0) + '\n(-' + (drop * 100).toFixed(1) + '%)',
+                            symbol: 'path://M12 2L22 20H2L12 2Z',
+                            symbolSize: 8,
+                            symbolRotate: 0,
+                            symbolOffset: [0, 15],
+                            itemStyle: { color: '#00da3c' },
+                            label: { color: '#00da3c', position: 'bottom', fontSize: 10, align: 'center', lineHeight: 12 }
+                        });
                     }
-                    // 偵測是否從最高點拉回超過 5%，若有則確認波段反轉向下
-                    if ((chartData.values[peakIdx][3] - close) / chartData.values[peakIdx][3] >= REVERSAL) {
-                        state = -1;
-                        troughIdx = i; // 進入下降波段，初始谷底為當天
-                    }
-                } else { 
-                    // 處於下降波段，尋找當地最低點
-                    if (low < chartData.values[troughIdx][2]) {
-                        troughIdx = i; 
-                    }
-                    // 偵測是否從最低點反彈超過 5%，若有則確認波段反轉向上
-                    if ((close - chartData.values[troughIdx][2]) / chartData.values[troughIdx][2] >= REVERSAL) {
-                        // 結算這個剛結束的下降波段
-                        let drop = (chartData.values[peakIdx][3] - chartData.values[troughIdx][2]) / chartData.values[peakIdx][3];
-                        
-                        // ✅ 無論是否突破歷史新高，只要這段「局部下滑」的跌幅超過 10%，就獨立標示出來！
-                        if (drop >= 0.10) {
-                            markArea.push([
-                                { xAxis: chartData.categoryData[peakIdx] },
-                                { xAxis: chartData.categoryData[troughIdx] }
-                            ]);
-                        }
-                        
-                        // 狀態反轉回上升波段
-                        state = 1;
-                        peakIdx = i; 
-                    }
+                    state = 1; peakIdx = i;
                 }
             }
-            
-            // 處理陣列最末端尚未反轉的趨勢
-            if (state === -1) {
-                let drop = (chartData.values[peakIdx][3] - chartData.values[troughIdx][2]) / chartData.values[peakIdx][3];
-                if (drop >= 0.10) {
-                    markArea.push([
-                        { xAxis: chartData.categoryData[peakIdx] },
-                        { xAxis: chartData.categoryData[troughIdx] }
-                    ]);
-                }
-            }
-            
-            return markArea;
         }
+        if (state === -1) {
+            let drop = (chartData.values[peakIdx][3] - chartData.values[troughIdx][2]) / chartData.values[peakIdx][3];
+            if (drop >= 0.08) {
+                markArea.push([
+                    { xAxis: chartData.categoryData[peakIdx], itemStyle: { color: 'rgba(239, 68, 68, 0.15)' } },
+                    { xAxis: chartData.categoryData[troughIdx] }
+                ]);
+                markPoint.push({
+                    name: '波段高點',
+                    coord: [chartData.categoryData[peakIdx], chartData.values[peakIdx][3]],
+                    value: chartData.values[peakIdx][3].toFixed(0),
+                    symbol: 'path://M12 2L22 20H2L12 2Z',
+                    symbolSize: 8,
+                    symbolRotate: 180,
+                    symbolOffset: [0, -15],
+                    itemStyle: { color: '#facc15' },
+                    label: { color: '#facc15', position: 'top', fontSize: 10 }
+                });
+                markPoint.push({
+                    name: '波段低點',
+                    coord: [chartData.categoryData[troughIdx], chartData.values[troughIdx][2]],
+                    value: chartData.values[troughIdx][2].toFixed(0) + '\n(-' + (drop * 100).toFixed(1) + '%)',
+                    symbol: 'path://M12 2L22 20H2L12 2Z',
+                    symbolSize: 8,
+                    symbolRotate: 0,
+                    symbolOffset: [0, 15],
+                    itemStyle: { color: '#00da3c' },
+                    label: { color: '#00da3c', position: 'bottom', fontSize: 10, align: 'center', lineHeight: 12 }
+                });
+            }
+        }
+        return { markArea, markPoint };
+    }
 
-        function getBottomFishingPoints(chartData, ma60Data) {
-            let markPointData = [];
+    // ─── 領先預測指標：即將見底預警 (跳空大跌 + VIX不創高) ─────────────────────────
+    function getPredictiveBottoms(chartData, ma240Data) {
+        let points = [];
+        for (let i = 240; i < chartData.values.length; i++) {
+            let close = chartData.values[i][1], low = chartData.values[i][2], open = chartData.values[i][0];
+            let prevLow = chartData.values[i-1][2], prevClose = chartData.values[i-1][1];
             
-            for (let i = 1; i < chartData.values.length; i++) { // 從 1 開始，為了讀取 i-1
-                let openPrice = chartData.values[i][0];
-                let closePrice = chartData.values[i][1];
-                let lowPrice = chartData.values[i][2];
-                let date = chartData.categoryData[i];
-                
-                // 找尋近半年 (120天) 的最高點來計算波段跌幅
-                let startIndex = Math.max(0, i - 120);
-                let recentHigh = 0;
-                for (let j = startIndex; j <= i; j++) {
-                    let h = chartData.values[j][3];
-                    if (h > recentHigh) {
-                        recentHigh = h;
-                    }
-                }
-                
-                // 條件一：波段跌幅 >= 15%
-                let drop = (recentHigh - lowPrice) / recentHigh;
-                let isDrop15 = drop >= 0.15; 
-                
-                // 條件二：跌破季線 (MA60)
-                let ma60 = parseFloat(ma60Data[i]);
-                let isBelowMA60 = !isNaN(ma60) && (closePrice < ma60);
-                
-                // 條件三：加速趕底 (前 1~3 天內有單日跌幅 > 3% 的長黑K)
-                let hasRecentCrash = false;
-                for(let offset = 0; offset <= 3; offset++) {
-                    if (i - offset > 0) {
-                        let c = chartData.values[i - offset][1];
-                        let prev_c = chartData.values[i - offset - 1][1];
-                        let daily_drop = (prev_c - c) / prev_c;
-                        if (daily_drop >= 0.03) {
-                            hasRecentCrash = true;
-                            break;
-                        }
-                    }
-                }
+            // 計算兩個價值錨點的及格線
+            let recentHigh = 0;
+            for (let j = i - 120; j <= i; j++) {
+                if (chartData.values[j][3] > recentHigh) recentHigh = chartData.values[j][3];
+            }
+            let ma240 = parseFloat(ma240Data[i]);
+            
+            let supportHigh = recentHigh * 0.88;
+            let supportMA = ma240 * 0.88;
+            
+            // 判斷落入哪個重力區間
+            let isBelowHigh = low < supportHigh;
+            let isBelowMA = low < supportMA;
+            
+            // 如果連一根線都沒碰到（觀望區），就不用看了
+            if (!isBelowHigh && !isBelowMA) continue;
+            
+            // 條件 2: 恐慌跳空缺口 (開盤價直接低於昨天最低價)
+            let isGapDown = open < prevLow;
+            
+            // 條件 3: VIX 提前見頂 (恐慌疲勞) - VIX 仍高(>25)，但今天 VIX 竟然比昨天低，且今天股價還在跌
+            let vix = chartData.vixData[i], prevVix = chartData.vixData[i-1];
+            let isVixPeakedEarly = vix > 25 && vix < prevVix && close < prevClose;
 
-                // 條件四：恐慌極值 (VIX >= 35 或 RSI60 <= 38)
-                let vix = chartData.vixData[i];
-                let rsi = chartData.rsiData[i];
-                let isVixExtreme = vix >= 35; 
-                let isRsiExtreme = rsi <= 38; 
-                
-                // --- 🌟 終極抄底 SOP 增強邏輯 ---
-                let prevLow = chartData.values[i-1][2];
-                let prevVix = chartData.vixData[i-1];
-                
-                // 終極特徵A：竭盡缺口 (今天開盤跳空跌破昨天最低價)
-                let isGapDown = openPrice < prevLow;
-                // 終極特徵B：VIX 恐慌背離 (今天大盤繼續破底，但 VIX 卻比昨天下降)
-                let isVixDivergence = (lowPrice < prevLow) && (vix < prevVix) && (vix > 28);
-                
-                let isUltimateSignal = isGapDown || isVixDivergence;
-                
-                // 基礎條件都滿足時，才會進行標記
-                let isBaseBottom = isDrop15 && isBelowMA60 && (isVixExtreme || isRsiExtreme) && hasRecentCrash;
-                
-                if (isBaseBottom) {
-                    // 防呆機制：5天內只標記一次最重要的
-                    if (markPointData.length === 0 || i - markPointData[markPointData.length - 1].index > 5) {
-                        
-                        let labelName = isUltimateSignal ? '開始分批建倉 (背離/缺口)' : '波段大底';
-                        let colorHex = isUltimateSignal ? '#8b5cf6' : '#ef4444'; // 紫色代表終極，紅色代表普通大底
-                        let yOffset = isUltimateSignal ? -20 : -15;
-                        let size = isUltimateSignal ? 55 : 45;
-                        
-                        markPointData.push({
-                            name: labelName,
-                            coord: [date, chartData.values[i][3]], // 標記在高價上方
-                            value: isUltimateSignal ? '開始分批建倉' : '試買',
+            // 條件 4: RSI60 必須進入超賣區 (< 45)，過濾掉假跌破
+            let rsi = chartData.rsiData[i];
+            let isRsiOversold = rsi < 45;
+            
+            // 同時滿足領先訊號與 RSI 超賣
+            if ((isGapDown || isVixPeakedEarly) && isRsiOversold) {
+                // 確保不要連續標記，間隔至少 5 天
+                if (points.length === 0 || i - points[points.length - 1].index > 5) {
+                    
+                    // 【終極鑽石底過濾條件】：為了避免如 2008 年長空頭中出現過多假信號
+                    // 必須滿足 RSI 深度超賣 (< 40) 且 (恐慌指數極高 VIX > 35 或 跌幅極深低於年線 20%)
+                    let isDiamondBottom = isBelowHigh && isBelowMA && rsi < 40 && (vix > 35 || low < ma240 * 0.80);
+                    
+                    if (isDiamondBottom) {
+                        // 【第三區間：雙重失控區】極端恐慌大底
+                        points.push({
+                            name: '終極大底',
+                            coord: [chartData.categoryData[i], low],
+                            value: '鑽石底',
                             index: i,
-                            itemStyle: { color: colorHex },
-                            symbolSize: size,
-                            symbolRotate: 180, // 上下顛倒，箭頭朝下指向K線
-                            symbolOffset: [0, yOffset],
-                            label: { fontSize: 10, color: '#fff', fontWeight: 'bold' } // 白字較清楚
+                            symbol: 'pin',
+                            symbolSize: 55,
+                            symbolRotate: 180,
+                            symbolOffset: [0, -10],
+                            itemStyle: { color: '#fbbf24' }, // 金黃色大頭針
+                            label: { fontSize: 10, color: '#000', fontWeight: 'bold' }
+                        });
+                    } else if (isBelowHigh || isBelowMA) {
+                        // 【第二區間：單一邏輯區】一般波段底部
+                        points.push({
+                            name: '預備抄底',
+                            coord: [chartData.categoryData[i], low],
+                            value: isGapDown ? '跳空竭盡' : 'VIX轉弱',
+                            index: i,
+                            symbol: 'pin',
+                            symbolSize: 40,
+                            symbolRotate: 180,
+                            symbolOffset: [0, -10],
+                            itemStyle: { color: '#ef4444' }, // 紅色大頭針
+                            label: { fontSize: 9, color: '#fff', fontWeight: 'bold' }
                         });
                     }
                 }
             }
-            return markPointData;
         }
+        return points;
+    }
 
-        function renderChart(data, titleText) {
-            const chartData = splitData(data);
-            const ma60Data = calculateMA(60, chartData.values);
-            const ma240Data = calculateMA(240, chartData.values);
+    // ─── 領先預測指標：即將見頂預警 (動能衰退 + VIX偷偷上升) ─────────────────────────
+    function getPredictiveTops(chartData, ma240Data) {
+        let points = [];
+        for (let i = 20; i < chartData.values.length; i++) {
+            let close = chartData.values[i][1], high = chartData.values[i][3];
+            let ma240 = parseFloat(ma240Data[i]);
+            if (isNaN(ma240)) continue;
             
-            const option = {
-                backgroundColor: '#121212',
-                animation: false,
-                legend: {
-                    data: ['K線', '季線 (MA60)', '年線 (MA240)'],
-                    inactiveColor: '#777',
-                    textStyle: { color: '#fff' },
-                    top: 0
-                },
-                tooltip: {
-                    trigger: 'axis',
-                    axisPointer: { type: 'cross' }
-                },
-                axisPointer: {
-                    link: [{ xAxisIndex: 'all' }],
-                    label: { backgroundColor: '#777' }
-                },
-                visualMap: { show: false },
-                grid: [
-                    { left: '5%', right: '3%', top: '8%',  height: '33%' }, // K-line grid
-                    { left: '5%', right: '3%', top: '46%', height: '14%' }, // VIX grid
-                    { left: '5%', right: '3%', top: '64%', height: '26%' }  // RSI grid
-                ],
-                xAxis: [
-                    { type: 'category', data: chartData.categoryData, scale: true, boundaryGap: false, axisLine: { onZero: false }, splitLine: { show: false }, min: 'dataMin', max: 'dataMax', axisPointer: { z: 100 } },
-                    { type: 'category', gridIndex: 1, data: chartData.categoryData, scale: true, boundaryGap: false, axisLine: { onZero: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' },
-                    { type: 'category', gridIndex: 2, data: chartData.categoryData, scale: true, boundaryGap: false, axisLine: { onZero: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' }
-                ],
-                yAxis: [
-                    { scale: true, splitArea: { show: true, areaStyle: { color: ['rgba(255,255,255,0.02)', 'rgba(255,255,255,0.05)'] } }, splitLine: { show: false } },
-                    { gridIndex: 1, scale: true, splitNumber: 2, splitLine: { show: false }, axisLabel: { formatter: '{value}' } },
-                    { gridIndex: 2, scale: true, splitNumber: 2, splitLine: { show: false }, axisLabel: { formatter: '{value}' } }
-                ],
-                dataZoom: [
-                    {
-                        type: 'inside',
-                        xAxisIndex: [0, 1, 2],
-                        start: 75, end: 100,
-                        zoomOnMouseWheel: true,
-                        moveOnMouseMove: true,
-                        moveOnMouseWheel: false,
-                        preventDefaultMouseMove: true
-                    },
-                    {
-                        show: true,
-                        type: 'slider',
-                        xAxisIndex: [0, 1, 2],
-                        bottom: '1%',
-                        height: 20,
-                        start: 75, end: 100,
-                        textStyle: { color: '#8392A5', fontSize: 10 },
-                        borderColor: '#444',
-                        fillerColor: 'rgba(80,120,200,0.2)',
-                        handleStyle: { color: '#aaa' },
-                        dataBackground: { lineStyle: { color: '#555' }, areaStyle: { color: '#333' } }
-                    }
-                ],
-                series: [
-                    {
-                        name: 'K線',
-                        type: 'candlestick',
-                        data: chartData.values,
-                        itemStyle: {
-                            color: upColor,
-                            color0: downColor,
-                            borderColor: upBorderColor,
-                            borderColor0: downBorderColor
-                        },
-                        markArea: {
-                            itemStyle: {
-                                color: 'rgba(34, 197, 94, 0.2)' // 透明綠色
-                            },
-                            data: getDropRegions(chartData)
-                        },
-                        markPoint: {
-                            symbol: 'pin',
-                            data: getBottomFishingPoints(chartData, ma60Data)
-                        }
-                    },
-                    {
-                        name: '季線 (MA60)',
-                        type: 'line',
-                        data: ma60Data,
-                        smooth: true,
-                        showSymbol: false,
-                        lineStyle: { width: 1.5, color: '#facc15' } // Yellow
-                    },
-                    {
-                        name: '年線 (MA240)',
-                        type: 'line',
-                        data: ma240Data,
-                        smooth: true,
-                        showSymbol: false,
-                        lineStyle: { width: 1.5, color: '#ec4899' } // Pink
-                    },
-                    {
-                        name: 'VIX',
-                        type: 'line',
-                        xAxisIndex: 1,
-                        yAxisIndex: 1,
-                        data: chartData.vixData,
-                        smooth: true,
-                        showSymbol: false,
-                        lineStyle: { width: 1, color: '#f59e0b' },
-                        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(245, 158, 11, 0.5)'}, {offset: 1, color: 'rgba(245, 158, 11, 0.05)'}]) },
-                        markLine: {
-                            data: [
-                                { yAxis: 35, name: '恐慌區 35', lineStyle: { type: 'dashed', color: '#fb923c', width: 1.5 }, label: { formatter: 'VIX 35 恐慌', color: '#fb923c', position: 'insideEndTop', fontSize: 11 } },
-                                { yAxis: 50, name: '極端恐慌 50', lineStyle: { type: 'dashed', color: '#ef4444', width: 1.5 }, label: { formatter: 'VIX 50 極端', color: '#ef4444', position: 'insideEndTop', fontSize: 11 } }
-                            ],
-                            symbol: 'none'
-                        }
-                    },
-                    {
-                        name: 'RSI(60)',
-                        type: 'line',
-                        xAxisIndex: 2,
-                        yAxisIndex: 2,
-                        data: chartData.rsiData,
-                        smooth: true,
-                        showSymbol: false,
-                        lineStyle: { width: 1, color: '#3b82f6' },
-                        markLine: {
-                            data: [
-                                { yAxis: 42, name: '底部均值 42', lineStyle: { type: 'dashed', color: '#fb923c', width: 1.5 }, label: { formatter: 'RSI 42 底部均值', color: '#fb923c', position: 'insideEndTop', fontSize: 11 } },
-                                { yAxis: 38, name: '極端底部 38', lineStyle: { type: 'dashed', color: '#ef4444', width: 1.5 }, label: { formatter: 'RSI 38 極端底', color: '#ef4444', position: 'insideEndTop', fontSize: 11 } },
-                                { yAxis: 70, lineStyle: { type: 'dashed', color: 'rgba(255,255,255,0.2)' }, label: { show: false } }
-                            ],
-                            symbol: 'none'
-                        }
-                    }
-                ]
-            };
-
-            myChart.setOption(option, true);
-        }
-
-        async function loadData(market) {
-            document.getElementById('loading').style.display = 'flex';
-            try {
-                // Ensure browser doesn't load a cached version eagerly
-                const response = await fetch(`${market}_data.json?t=${new Date().getTime()}`);
-                if (!response.ok) throw new Error('Data file not found or still generating.');
-                const data = await response.json();
-                renderChart(data, market === 'twii' ? '台灣加權指數 (^TWII)' : '那斯達克指數 (^IXIC)');
-            } catch (error) {
-                console.error('Error fetching data:', error);
-                alert("未找到數據文件。這可能是因為背景腳本仍在從 Yahoo Finance 下載中，請等待 1~2 分鐘後重新整理頁面。");
-            } finally {
-                document.getElementById('loading').style.display = 'none';
+            // 條件 1: 極端乖離 (距離年線大於 15%)
+            if ((close - ma240) / ma240 < 0.15) continue;
+            
+            // 條件 2: 動能衰退 (最近5天漲幅 < 最近20天漲幅的四分之一)
+            let roc5 = (close - chartData.values[i-5][1]) / chartData.values[i-5][1];
+            let roc20 = (close - chartData.values[i-20][1]) / chartData.values[i-20][1];
+            let isMomentumDecay = roc5 > 0 && roc5 < (roc20 / 4);
+            
+            // 條件 3: VIX 提前偷溜 (股價創新高，但 VIX 比前幾天高)
+            let vix = chartData.vixData[i], vix3 = chartData.vixData[i-3], vix5 = chartData.vixData[i-5];
+            let prevHigh = Math.max(chartData.values[i-1][3], chartData.values[i-2][3]);
+            let isVixSneakingUp = high > prevHigh && vix > Math.min(vix3, vix5) && vix < 20;
+            
+            if (isMomentumDecay || isVixSneakingUp) {
+                if (points.length === 0 || i - points[points.length - 1].index > 10) {
+                    points.push({
+                        name: '高點預警',
+                        coord: [chartData.categoryData[i], high],
+                        value: isMomentumDecay ? '動能衰退' : 'VIX偷溜',
+                        index: i,
+                        symbol: 'pin',
+                        symbolSize: 40,
+                        symbolOffset: [0, 10],
+                        itemStyle: { color: '#a855f7' }, // 紫色大頭針
+                        label: { fontSize: 9, color: '#fff', fontWeight: 'bold' }
+                    });
+                }
             }
         }
+        return points;
+    }
 
-        window.addEventListener('resize', () => { myChart.resize(); });
+    // ─── 計算動態共振支撐線 ────────────────────────────────────────────────────────
+    function getDynamicSupports(chartData, ma240Data) {
+        let supportHigh = [];
+        let supportMA = [];
+        for (let i = 0; i < chartData.values.length; i++) {
+            if (i < 120) {
+                supportHigh.push('-');
+                supportMA.push('-');
+                continue;
+            }
+            let recentHigh = 0;
+            for (let j = i - 120; j <= i; j++) {
+                if (chartData.values[j][3] > recentHigh) recentHigh = chartData.values[j][3];
+            }
+            let ma240 = parseFloat(ma240Data[i]);
+            
+            supportHigh.push((recentHigh * 0.88).toFixed(2)); // 波段回檔 12%
+            if (!isNaN(ma240)) {
+                supportMA.push((ma240 * 0.88).toFixed(2)); // 年線負乖離 12%
+            } else {
+                supportMA.push('-');
+            }
+        }
+        return { supportHigh, supportMA };
+    }
+
+    // ─── 綜合恐慌抄底指數 (VIX / RSI 正規化) ────────────────────────────────────────────────────────
+    function calculatePanicScore(chartData, ma60Data, ma240Data) {
+        let scores = [];
+        for (let i = 0; i < chartData.values.length; i++) {
+            if (i < 120) { scores.push('-'); continue; }
+            
+            let rsi = chartData.rsiData[i];
+            let vix = chartData.vixData[i];
+            
+            if (rsi === 0) rsi = 1; // 避免除以零
+            
+            // 用戶提出的終極除法公式：VIX / RSI
+            // 當恐慌(分子)極大，且動能(分母)極小時，數值會產生銳利的噴出
+            let ratio = vix / rsi;
+            
+            // 正規化為 0~100 (根據回測，1.5 已經是全歷史前 1% 的黑天鵝極值)
+            // 將 ratio 乘上 60，可以讓 1.5 的比值剛好對應到 90 分 (百年鑽石底)
+            // 0.83 的比值對應到 50 分 (一般股災底)
+            let score = ratio * 60;
+            
+            // 保留無上限的特性，讓圖表能長出最真實的尖刺
+            score = Math.max(0, score);
+            
+            scores.push(score.toFixed(1));
+        }
+        return scores;
+    }
+
+    // ─── 主繪圖函數 ────────────────────────────────────────────────────────────
+    function renderChart(data, titleText) {
+        const chartData = splitData(data);
+        const ma60Data  = calculateMA(60,  chartData.values);
+        const ma240Data = calculateMA(240, chartData.values);
+        const swingData = getSwingRegions(chartData);
         
-        document.getElementById('marketSelector').addEventListener('change', (e) => {
-            loadData(e.target.value);
-        });
+        // 預測點位
+        const predictiveBottoms = getPredictiveBottoms(chartData, ma240Data);
+        const predictiveTops = getPredictiveTops(chartData, ma240Data);
+        
+        // 動態支撐線與恐慌指數
+        const dynamicSupports = getDynamicSupports(chartData, ma240Data);
+        const panicScores = calculatePanicScore(chartData, ma60Data, ma240Data);
 
-        // Initialize with default
-        loadData('twii');
-    </script>
+        const option = {
+            backgroundColor: '#121212',
+            animation: false,
+            legend: {
+                data: ['K線', '季線 (MA60)', '年線 (MA240)', '波段支撐 (-12%)', '年線支撐 (-12%)', 'VIX', 'RSI(60)', '恐慌抄底指數'],
+                inactiveColor: '#777',
+                textStyle: { color: '#fff' },
+                top: 0
+            },
+            tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+            axisPointer: { link: [{ xAxisIndex: 'all' }], label: { backgroundColor: '#777' } },
+            visualMap: { show: false },
+            grid: [
+                { left: '5%', right: '3%', top: '6%',  height: '48%' },
+                { left: '5%', right: '3%', top: '58%', height: '11%' },
+                { left: '5%', right: '3%', top: '73%', height: '11%' },
+                { left: '5%', right: '3%', top: '88%', height: '11%' }
+            ],
+            xAxis: [
+                { type: 'category', data: chartData.categoryData, scale: true, boundaryGap: false,
+                  axisLine: { onZero: false }, splitLine: { show: false }, min: 'dataMin', max: 'dataMax', axisPointer: { z: 100 } },
+                { type: 'category', gridIndex: 1, data: chartData.categoryData, scale: true, boundaryGap: false,
+                  axisLine: { onZero: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' },
+                { type: 'category', gridIndex: 2, data: chartData.categoryData, scale: true, boundaryGap: false,
+                  axisLine: { onZero: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' },
+                { type: 'category', gridIndex: 3, data: chartData.categoryData, scale: true, boundaryGap: false,
+                  axisLine: { onZero: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' }
+            ],
+            yAxis: [
+                { scale: true, splitArea: { show: true, areaStyle: { color: ['rgba(255,255,255,0.02)', 'rgba(255,255,255,0.05)'] } }, splitLine: { show: false } },
+                { gridIndex: 1, scale: true, splitNumber: 2, splitLine: { show: false }, axisLabel: { formatter: '{value}' } },
+                { gridIndex: 2, scale: true, splitNumber: 2, splitLine: { show: false }, axisLabel: { formatter: '{value}' } },
+                { gridIndex: 3, scale: false, min: 0, splitNumber: 2, splitLine: { show: true, lineStyle: { color: '#333' } }, axisLabel: { formatter: '{value}' } }
+            ],
+            dataZoom: [
+                {
+                    type: 'inside', xAxisIndex: [0, 1, 2, 3],
+                    start: 85, end: 100,
+                    zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: false, preventDefaultMouseMove: true
+                },
+                {
+                    show: true, type: 'slider', xAxisIndex: [0, 1, 2, 3],
+                    bottom: '1%', height: 20, start: 85, end: 100,
+                    textStyle: { color: '#8392A5', fontSize: 10 },
+                    borderColor: '#444', fillerColor: 'rgba(80,120,200,0.2)',
+                    handleStyle: { color: '#aaa' },
+                    dataBackground: { lineStyle: { color: '#555' }, areaStyle: { color: '#333' } }
+                }
+            ],
+            series: [
+                {
+                    name: 'K線',
+                    type: 'candlestick',
+                    data: chartData.values,
+                    itemStyle: { color: upColor, color0: downColor, borderColor: upBorderColor, borderColor0: downBorderColor },
+                    markArea: {
+                        data: swingData.markArea
+                    },
+                    markPoint: {
+                        data: [
+                            ...swingData.markPoint,
+                            ...predictiveBottoms,
+                            ...predictiveTops
+                        ]
+                    }
+                },
+                {
+                    name: '季線 (MA60)', type: 'line', data: ma60Data,
+                    smooth: true, showSymbol: false,
+                    lineStyle: { width: 1.5, color: '#facc15' }
+                },
+                {
+                    name: '年線 (MA240)', type: 'line', data: ma240Data,
+                    smooth: true, showSymbol: false,
+                    lineStyle: { width: 1.5, color: '#ec4899' }
+                },
+                {
+                    name: '波段支撐 (-12%)', type: 'line', data: dynamicSupports.supportHigh,
+                    smooth: true, showSymbol: false,
+                    lineStyle: { width: 1, color: '#06b6d4', type: 'dashed', opacity: 0.7 }
+                },
+                {
+                    name: '年線支撐 (-12%)', type: 'line', data: dynamicSupports.supportMA,
+                    smooth: true, showSymbol: false,
+                    lineStyle: { width: 1, color: '#d946ef', type: 'dashed', opacity: 0.7 }
+                },
+                {
+                    name: 'VIX', type: 'line', xAxisIndex: 1, yAxisIndex: 1,
+                    data: chartData.vixData, smooth: true, showSymbol: false,
+                    lineStyle: { width: 1.5, color: '#f59e0b' },
+                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1,
+                        [{offset: 0, color: 'rgba(245,158,11,0.5)'}, {offset: 1, color: 'rgba(245,158,11,0.05)'}]) }
+                },
+                {
+                    name: 'RSI(60)', type: 'line', xAxisIndex: 2, yAxisIndex: 2,
+                    data: chartData.rsiData, smooth: true, showSymbol: false,
+                    lineStyle: { width: 1.5, color: '#3b82f6' }
+                },
+                {
+                    name: '恐慌抄底指數', type: 'line', xAxisIndex: 3, yAxisIndex: 3,
+                    data: panicScores, smooth: true, showSymbol: false,
+                    lineStyle: { width: 2, color: '#ef4444' },
+                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1,
+                        [{offset: 0, color: 'rgba(239, 68, 68, 0.5)'}, {offset: 1, color: 'rgba(239, 68, 68, 0.05)'}]) },
+                    markLine: {
+                        symbol: ['none', 'none'],
+                        label: { show: true, position: 'insideStartTop' },
+                        data: [
+                            { yAxis: 90, name: '百年黑天鵝', lineStyle: { color: '#fbbf24', type: 'dashed' }, label: { color: '#fbbf24', formatter: '百年黑天鵝(>90)' } },
+                            { yAxis: 50, name: '一般股災底', lineStyle: { color: '#ef4444', type: 'dashed' }, label: { color: '#ef4444', formatter: '一般股災底(>50)' } },
+                            { yAxis: 25, name: '市場失控警戒', lineStyle: { color: '#888', type: 'dotted' }, label: { color: '#888', formatter: '市場失控(>25)' } }
+                        ]
+                    }
+                }
+            ]
+        };
+
+        myChart.setOption(option, true);
+    }
+
+    // ─── 資料載入 ──────────────────────────────────────────────────────────────
+    async function loadData(market) {
+        document.getElementById('loading').style.display = 'flex';
+        try {
+            const response = await fetch(`${market}_data.json?t=${new Date().getTime()}`);
+            if (!response.ok) throw new Error('Data file not found.');
+            const data = await response.json();
+            renderChart(data, market === 'twii' ? '台灣加權指數 (^TWII)' : '那斯達克指數 (^IXIC)');
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            alert("未找到數據文件。請等待 1~2 分鐘後重新整理頁面。");
+        } finally {
+            document.getElementById('loading').style.display = 'none';
+        }
+    }
+
+    window.addEventListener('resize', () => { myChart.resize(); });
+    document.getElementById('marketSelector').addEventListener('change', (e) => { loadData(e.target.value); });
+    loadData('twii');
+</script>
 </body>
 </html>
