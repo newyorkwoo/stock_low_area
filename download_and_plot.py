@@ -33,14 +33,14 @@ def batch_download(ticker, start_year=2007):
             start_date = f"{year}-01-01"
             end_date = f"{year+1}-01-01"
             if year == current_year:
-                end_date = datetime.now().strftime('%Y-%m-%d')
+                end_date = (datetime.now() + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
             
-            data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+            t = yf.Ticker(ticker)
+            data = t.history(start=start_date, end=end_date)
             
             if not data.empty:
-                # Handle MultiIndex in newer yfinance versions
-                if isinstance(data.columns, pd.MultiIndex):
-                    data.columns = data.columns.get_level_values(0)
+                if data.index.tz is not None:
+                    data.index = data.index.tz_localize(None)
                 all_data.append(data)
             
             # Sleep to avoid rate limiting / IP bans

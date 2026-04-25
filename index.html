@@ -196,63 +196,86 @@
             return markArea;
         }
 
-        function getBottomFishingPoints(chartData, ma60Data, ma240Data) {
+        function getBottomFishingPoints(chartData, ma60Data) {
             let markPointData = [];
             
-            for (let i = 0; i < chartData.values.length; i++) {
-                let low = chartData.values[i][2];
+            for (let i = 1; i < chartData.values.length; i++) { // 從 1 開始，為了讀取 i-1
+                let openPrice = chartData.values[i][0];
+                let closePrice = chartData.values[i][1];
+                let lowPrice = chartData.values[i][2];
                 let date = chartData.categoryData[i];
                 
-                // Find highest high in the last 120 days (approx. half year)
+                // 找尋近半年 (120天) 的最高點來計算波段跌幅
                 let startIndex = Math.max(0, i - 120);
                 let recentHigh = 0;
                 for (let j = startIndex; j <= i; j++) {
-                    if (chartData.values[j][3] > recentHigh) {
-                        recentHigh = chartData.values[j][3];
+                    let h = chartData.values[j][3];
+                    if (h > recentHigh) {
+                        recentHigh = h;
                     }
                 }
                 
-                let drop = (recentHigh - low) / recentHigh;
-                let isDrop10 = drop >= 0.10;
+                // 條件一：波段跌幅 >= 15%
+                let drop = (recentHigh - lowPrice) / recentHigh;
+                let isDrop15 = drop >= 0.15; 
                 
+                // 條件二：跌破季線 (MA60)
                 let ma60 = parseFloat(ma60Data[i]);
-                let ma240 = parseFloat(ma240Data[i]);
+                let isBelowMA60 = !isNaN(ma60) && (closePrice < ma60);
                 
-                let nearMA60 = !isNaN(ma60) && (low <= ma60 * 1.02);
-                let nearMA240 = !isNaN(ma240) && (low <= ma240 * 1.02);
-                let isNearMA = nearMA60 || nearMA240;
-                
+                // 條件三：加速趕底 (前 1~3 天內有單日跌幅 > 3% 的長黑K)
+                let hasRecentCrash = false;
+                for(let offset = 0; offset <= 3; offset++) {
+                    if (i - offset > 0) {
+                        let c = chartData.values[i - offset][1];
+                        let prev_c = chartData.values[i - offset - 1][1];
+                        let daily_drop = (prev_c - c) / prev_c;
+                        if (daily_drop >= 0.03) {
+                            hasRecentCrash = true;
+                            break;
+                        }
+                    }
+                }
+
+                // 條件四：恐慌極值 (VIX >= 35 或 RSI60 <= 38)
                 let vix = chartData.vixData[i];
                 let rsi = chartData.rsiData[i];
-                let isVixHigh = vix > 28;
-                let isRsiLow = rsi <= 42;
+                let isVixExtreme = vix >= 35; 
+                let isRsiExtreme = rsi <= 38; 
                 
-                let isNormalBottom = isDrop10 && isNearMA && isVixHigh && isRsiLow;
-                let isExtremePanic = vix > 35;
-                let isExtremeOversold = rsi < 38;
+                // --- 🌟 終極抄底 SOP 增強邏輯 ---
+                let prevLow = chartData.values[i-1][2];
+                let prevVix = chartData.vixData[i-1];
                 
-                if (isNormalBottom || isExtremePanic || isExtremeOversold) {
+                // 終極特徵A：竭盡缺口 (今天開盤跳空跌破昨天最低價)
+                let isGapDown = openPrice < prevLow;
+                // 終極特徵B：VIX 恐慌背離 (今天大盤繼續破底，但 VIX 卻比昨天下降)
+                let isVixDivergence = (lowPrice < prevLow) && (vix < prevVix) && (vix > 28);
+                
+                let isUltimateSignal = isGapDown || isVixDivergence;
+                
+                // 基礎條件都滿足時，才會進行標記
+                let isBaseBottom = isDrop15 && isBelowMA60 && (isVixExtreme || isRsiExtreme) && hasRecentCrash;
+                
+                if (isBaseBottom) {
+                    // 防呆機制：5天內只標記一次最重要的
                     if (markPointData.length === 0 || i - markPointData[markPointData.length - 1].index > 5) {
-                        let pointName = '準備抄底';
-                        let pointColor = '#eab308'; // Gold
                         
-                        if (isExtremePanic) {
-                            pointName = '極端恐慌抄底';
-                            pointColor = '#ef4444'; // Red
-                        } else if (isExtremeOversold) {
-                            pointName = '極度超賣抄底';
-                            pointColor = '#3b82f6'; // Blue
-                        }
+                        let labelName = isUltimateSignal ? '開始分批建倉 (背離/缺口)' : '波段大底';
+                        let colorHex = isUltimateSignal ? '#8b5cf6' : '#ef4444'; // 紫色代表終極，紅色代表普通大底
+                        let yOffset = isUltimateSignal ? -20 : -15;
+                        let size = isUltimateSignal ? 55 : 45;
                         
                         markPointData.push({
-                            name: pointName,
-                            coord: [date, low],
-                            value: '抄底',
+                            name: labelName,
+                            coord: [date, chartData.values[i][3]], // 標記在高價上方
+                            value: isUltimateSignal ? '開始分批建倉' : '試買',
                             index: i,
-                            itemStyle: { color: pointColor },
-                            symbolSize: 45,
-                            symbolOffset: [0, 15],
-                            label: { fontSize: 10, color: '#000', fontWeight: 'bold' }
+                            itemStyle: { color: colorHex },
+                            symbolSize: size,
+                            symbolRotate: 180, // 上下顛倒，箭頭朝下指向K線
+                            symbolOffset: [0, yOffset],
+                            label: { fontSize: 10, color: '#fff', fontWeight: 'bold' } // 白字較清楚
                         });
                     }
                 }
@@ -341,7 +364,7 @@
                         },
                         markPoint: {
                             symbol: 'pin',
-                            data: getBottomFishingPoints(chartData, ma60Data, ma240Data)
+                            data: getBottomFishingPoints(chartData, ma60Data)
                         }
                     },
                     {

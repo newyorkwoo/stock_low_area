@@ -18,14 +18,15 @@ def calculate_rsi(data, window=60):
 
 def batch_download(ticker, start_year=2007):
     start_date = f"{start_year}-01-01"
-    end_date = datetime.now().strftime('%Y-%m-%d')
+    end_date = (datetime.now() + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
     print(f"Downloading {ticker} from {start_date} to {end_date}...")
     
     try:
-        data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        t = yf.Ticker(ticker)
+        data = t.history(start=start_date, end=end_date)
         if not data.empty:
-            if isinstance(data.columns, pd.MultiIndex):
-                data.columns = data.columns.get_level_values(0)
+            if data.index.tz is not None:
+                data.index = data.index.tz_localize(None)
             return data.sort_index()
     except Exception as e:
         print(f"Error downloading {ticker}: {e}")
