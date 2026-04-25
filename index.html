@@ -182,77 +182,37 @@
         return { markArea, markPoint };
     }
 
-    // ─── 領先預測指標：即將見底預警 (跳空大跌 + VIX不創高) ─────────────────────────
-    function getPredictiveBottoms(chartData, ma240Data) {
+    // ─── 領先預測指標：恐慌抄底大頭針 (基於 VIX/RSI 恐慌指數) ─────────────────────────
+    function getPredictiveBottoms(chartData, panicScores) {
         let points = [];
-        for (let i = 240; i < chartData.values.length; i++) {
-            let close = chartData.values[i][1], low = chartData.values[i][2], open = chartData.values[i][0];
-            let prevLow = chartData.values[i-1][2], prevClose = chartData.values[i-1][1];
+        for (let i = 120; i < chartData.values.length; i++) {
+            let score = parseFloat(panicScores[i]);
+            let prevScore = parseFloat(panicScores[i-1]);
+            let low = chartData.values[i][2];
             
-            // 計算兩個價值錨點的及格線
-            let recentHigh = 0;
-            for (let j = i - 120; j <= i; j++) {
-                if (chartData.values[j][3] > recentHigh) recentHigh = chartData.values[j][3];
-            }
-            let ma240 = parseFloat(ma240Data[i]);
-            
-            let supportHigh = recentHigh * 0.88;
-            let supportMA = ma240 * 0.88;
-            
-            // 判斷落入哪個重力區間
-            let isBelowHigh = low < supportHigh;
-            let isBelowMA = low < supportMA;
-            
-            // 如果連一根線都沒碰到（觀望區），就不用看了
-            if (!isBelowHigh && !isBelowMA) continue;
-            
-            // 條件 2: 恐慌跳空缺口 (開盤價直接低於昨天最低價)
-            let isGapDown = open < prevLow;
-            
-            // 條件 3: VIX 提前見頂 (恐慌疲勞) - VIX 仍高(>25)，但今天 VIX 竟然比昨天低，且今天股價還在跌
-            let vix = chartData.vixData[i], prevVix = chartData.vixData[i-1];
-            let isVixPeakedEarly = vix > 25 && vix < prevVix && close < prevClose;
-
-            // 條件 4: RSI60 必須進入超賣區 (< 45)，過濾掉假跌破
-            let rsi = chartData.rsiData[i];
-            let isRsiOversold = rsi < 45;
-            
-            // 同時滿足領先訊號與 RSI 超賣
-            if ((isGapDown || isVixPeakedEarly) && isRsiOversold) {
-                // 確保不要連續標記，間隔至少 5 天
-                if (points.length === 0 || i - points[points.length - 1].index > 5) {
+            // 尋找「恐慌轉折點」：昨天的分數突破警戒線，且今天分數開始下降（確認恐慌疲勞）
+            if (prevScore > 35 && score < prevScore) {
+                // 確保 10 天內不重複標示
+                if (points.length === 0 || i - points[points.length - 1].index > 10) {
                     
-                    // 【終極鑽石底過濾條件】：為了避免如 2008 年長空頭中出現過多假信號
-                    // 必須滿足 RSI 深度超賣 (< 40) 且 (恐慌指數極高 VIX > 35 或 跌幅極深低於年線 20%)
-                    let isDiamondBottom = isBelowHigh && isBelowMA && rsi < 40 && (vix > 35 || low < ma240 * 0.80);
-                    
-                    if (isDiamondBottom) {
-                        // 【第三區間：雙重失控區】極端恐慌大底
+                    if (prevScore > 90) {
                         points.push({
-                            name: '終極大底',
-                            coord: [chartData.categoryData[i], low],
-                            value: '鑽石底',
-                            index: i,
-                            symbol: 'pin',
-                            symbolSize: 55,
-                            symbolRotate: 180,
-                            symbolOffset: [0, -10],
-                            itemStyle: { color: '#fbbf24' }, // 金黃色大頭針
-                            label: { fontSize: 10, color: '#000', fontWeight: 'bold' }
+                            name: '百年鑽石底', coord: [chartData.categoryData[i], low], value: '終極大底',
+                            index: i, symbol: 'pin', symbolSize: 55, symbolRotate: 180, symbolOffset: [0, -10],
+                            itemStyle: { color: '#fbbf24' }, label: { fontSize: 10, color: '#000', fontWeight: 'bold' }
                         });
-                    } else if (isBelowHigh || isBelowMA) {
-                        // 【第二區間：單一邏輯區】一般波段底部
+                    } else if (prevScore > 50) {
                         points.push({
-                            name: '預備抄底',
-                            coord: [chartData.categoryData[i], low],
-                            value: isGapDown ? '跳空竭盡' : 'VIX轉弱',
-                            index: i,
-                            symbol: 'pin',
-                            symbolSize: 40,
-                            symbolRotate: 180,
-                            symbolOffset: [0, -10],
-                            itemStyle: { color: '#ef4444' }, // 紅色大頭針
-                            label: { fontSize: 9, color: '#fff', fontWeight: 'bold' }
+                            name: '一般股災底', coord: [chartData.categoryData[i], low], value: '恐慌反轉',
+                            index: i, symbol: 'pin', symbolSize: 40, symbolRotate: 180, symbolOffset: [0, -10],
+                            itemStyle: { color: '#ef4444' }, label: { fontSize: 9, color: '#fff', fontWeight: 'bold' }
+                        });
+                    } else {
+                        // 新增：抓出小波段跌幅 (Panic Score > 35)
+                        points.push({
+                            name: '短線超跌底', coord: [chartData.categoryData[i], low], value: '小幅修正',
+                            index: i, symbol: 'pin', symbolSize: 25, symbolRotate: 180, symbolOffset: [0, -10],
+                            itemStyle: { color: '#f97316' }, label: { fontSize: 8, color: '#fff', fontWeight: 'bold' } // 橘色
                         });
                     }
                 }
@@ -261,40 +221,38 @@
         return points;
     }
 
-    // ─── 領先預測指標：即將見頂預警 (動能衰退 + VIX偷偷上升) ─────────────────────────
-    function getPredictiveTops(chartData, ma240Data) {
+    // ─── 領先預測指標：貪婪逃頂大頭針 (基於 RSI/VIX 貪婪指數) ─────────────────────────
+    function getPredictiveTops(chartData, greedScores) {
         let points = [];
-        for (let i = 20; i < chartData.values.length; i++) {
-            let close = chartData.values[i][1], high = chartData.values[i][3];
-            let ma240 = parseFloat(ma240Data[i]);
-            if (isNaN(ma240)) continue;
+        for (let i = 120; i < chartData.values.length; i++) {
+            let score = parseFloat(greedScores[i]);
+            let prevScore = parseFloat(greedScores[i-1]);
+            let high = chartData.values[i][3];
             
-            // 條件 1: 極端乖離 (距離年線大於 15%)
-            if ((close - ma240) / ma240 < 0.15) continue;
-            
-            // 條件 2: 動能衰退 (最近5天漲幅 < 最近20天漲幅的四分之一)
-            let roc5 = (close - chartData.values[i-5][1]) / chartData.values[i-5][1];
-            let roc20 = (close - chartData.values[i-20][1]) / chartData.values[i-20][1];
-            let isMomentumDecay = roc5 > 0 && roc5 < (roc20 / 4);
-            
-            // 條件 3: VIX 提前偷溜 (股價創新高，但 VIX 比前幾天高)
-            let vix = chartData.vixData[i], vix3 = chartData.vixData[i-3], vix5 = chartData.vixData[i-5];
-            let prevHigh = Math.max(chartData.values[i-1][3], chartData.values[i-2][3]);
-            let isVixSneakingUp = high > prevHigh && vix > Math.min(vix3, vix5) && vix < 20;
-            
-            if (isMomentumDecay || isVixSneakingUp) {
+            // 尋找「貪婪轉折點」：昨天的分數突破警戒線，今天分數開始下降（動能衰退或 VIX 偷溜）
+            if (prevScore > 60 && score < prevScore) {
                 if (points.length === 0 || i - points[points.length - 1].index > 10) {
-                    points.push({
-                        name: '高點預警',
-                        coord: [chartData.categoryData[i], high],
-                        value: isMomentumDecay ? '動能衰退' : 'VIX偷溜',
-                        index: i,
-                        symbol: 'pin',
-                        symbolSize: 40,
-                        symbolOffset: [0, 10],
-                        itemStyle: { color: '#a855f7' }, // 紫色大頭針
-                        label: { fontSize: 9, color: '#fff', fontWeight: 'bold' }
-                    });
+                    
+                    if (prevScore > 90) {
+                        points.push({
+                            name: '極度貪婪', coord: [chartData.categoryData[i], high], value: '閃崩前兆',
+                            index: i, symbol: 'pin', symbolSize: 55, symbolOffset: [0, 10],
+                            itemStyle: { color: '#ec4899' }, label: { fontSize: 10, color: '#fff', fontWeight: 'bold' }
+                        });
+                    } else if (prevScore > 70) {
+                        points.push({
+                            name: '高點警戒', coord: [chartData.categoryData[i], high], value: '貪婪反轉',
+                            index: i, symbol: 'pin', symbolSize: 40, symbolOffset: [0, 10],
+                            itemStyle: { color: '#10b981' }, label: { fontSize: 9, color: '#fff', fontWeight: 'bold' }
+                        });
+                    } else {
+                        // 新增：抓出小波段高點過熱 (Greed Score > 60)
+                        points.push({
+                            name: '短線過熱', coord: [chartData.categoryData[i], high], value: '小幅過熱',
+                            index: i, symbol: 'pin', symbolSize: 25, symbolOffset: [0, 10],
+                            itemStyle: { color: '#3b82f6' }, label: { fontSize: 8, color: '#fff', fontWeight: 'bold' } // 藍色
+                        });
+                    }
                 }
             }
         }
@@ -332,24 +290,33 @@
         let scores = [];
         for (let i = 0; i < chartData.values.length; i++) {
             if (i < 120) { scores.push('-'); continue; }
-            
             let rsi = chartData.rsiData[i];
             let vix = chartData.vixData[i];
-            
-            if (rsi === 0) rsi = 1; // 避免除以零
-            
-            // 用戶提出的終極除法公式：VIX / RSI
-            // 當恐慌(分子)極大，且動能(分母)極小時，數值會產生銳利的噴出
+            if (rsi === 0) rsi = 1;
             let ratio = vix / rsi;
-            
-            // 正規化為 0~100 (根據回測，1.5 已經是全歷史前 1% 的黑天鵝極值)
-            // 將 ratio 乘上 60，可以讓 1.5 的比值剛好對應到 90 分 (百年鑽石底)
-            // 0.83 的比值對應到 50 分 (一般股災底)
             let score = ratio * 60;
-            
-            // 保留無上限的特性，讓圖表能長出最真實的尖刺
             score = Math.max(0, score);
+            scores.push(score.toFixed(1));
+        }
+        return scores;
+    }
+
+    // ─── 貪婪逃頂指數 (RSI / VIX 正規化) ────────────────────────────────────────────────────────
+    function calculateGreedScore(chartData) {
+        let scores = [];
+        for (let i = 0; i < chartData.values.length; i++) {
+            if (i < 120) { scores.push('-'); continue; }
+            let rsi = chartData.rsiData[i];
+            let vix = chartData.vixData[i];
+            if (vix === 0) vix = 1; // 避免除以零
             
+            // 市場自滿指數：動能極高 / 恐慌極低
+            let ratio = rsi / vix;
+            
+            // 根據回測，歷史前 1% 的比值為 6.0。
+            // 乘以 15，可以讓 6.0 的極端自滿點對應到 90 分。
+            let score = ratio * 15;
+            score = Math.max(0, score);
             scores.push(score.toFixed(1));
         }
         return scores;
@@ -362,19 +329,20 @@
         const ma240Data = calculateMA(240, chartData.values);
         const swingData = getSwingRegions(chartData);
         
-        // 預測點位
-        const predictiveBottoms = getPredictiveBottoms(chartData, ma240Data);
-        const predictiveTops = getPredictiveTops(chartData, ma240Data);
-        
-        // 動態支撐線與恐慌指數
+        // 動態支撐線與情緒指數
         const dynamicSupports = getDynamicSupports(chartData, ma240Data);
         const panicScores = calculatePanicScore(chartData, ma60Data, ma240Data);
+        const greedScores = calculateGreedScore(chartData);
+        
+        // 預測點位 (將剛剛的恐慌與貪婪指數帶入)
+        const predictiveBottoms = getPredictiveBottoms(chartData, panicScores);
+        const predictiveTops = getPredictiveTops(chartData, greedScores);
 
         const option = {
             backgroundColor: '#121212',
             animation: false,
             legend: {
-                data: ['K線', '季線 (MA60)', '年線 (MA240)', '波段支撐 (-12%)', '年線支撐 (-12%)', 'VIX', 'RSI(60)', '恐慌抄底指數'],
+                data: ['K線', '季線 (MA60)', '年線 (MA240)', '波段支撐 (-12%)', '年線支撐 (-12%)', 'VIX', 'RSI(60)', '恐慌抄底指數', '貪婪逃頂指數'],
                 inactiveColor: '#777',
                 textStyle: { color: '#fff' },
                 top: 0
@@ -383,10 +351,11 @@
             axisPointer: { link: [{ xAxisIndex: 'all' }], label: { backgroundColor: '#777' } },
             visualMap: { show: false },
             grid: [
-                { left: '5%', right: '3%', top: '6%',  height: '48%' },
-                { left: '5%', right: '3%', top: '58%', height: '11%' },
-                { left: '5%', right: '3%', top: '73%', height: '11%' },
-                { left: '5%', right: '3%', top: '88%', height: '11%' }
+                { left: '5%', right: '3%', top: '5%',  height: '38%' },
+                { left: '5%', right: '3%', top: '46%', height: '10%' },
+                { left: '5%', right: '3%', top: '59%', height: '10%' },
+                { left: '5%', right: '3%', top: '72%', height: '11%' },
+                { left: '5%', right: '3%', top: '86%', height: '11%' }
             ],
             xAxis: [
                 { type: 'category', data: chartData.categoryData, scale: true, boundaryGap: false,
@@ -396,22 +365,25 @@
                 { type: 'category', gridIndex: 2, data: chartData.categoryData, scale: true, boundaryGap: false,
                   axisLine: { onZero: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' },
                 { type: 'category', gridIndex: 3, data: chartData.categoryData, scale: true, boundaryGap: false,
+                  axisLine: { onZero: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' },
+                { type: 'category', gridIndex: 4, data: chartData.categoryData, scale: true, boundaryGap: false,
                   axisLine: { onZero: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' }
             ],
             yAxis: [
                 { scale: true, splitArea: { show: true, areaStyle: { color: ['rgba(255,255,255,0.02)', 'rgba(255,255,255,0.05)'] } }, splitLine: { show: false } },
                 { gridIndex: 1, scale: true, splitNumber: 2, splitLine: { show: false }, axisLabel: { formatter: '{value}' } },
                 { gridIndex: 2, scale: true, splitNumber: 2, splitLine: { show: false }, axisLabel: { formatter: '{value}' } },
-                { gridIndex: 3, scale: false, min: 0, splitNumber: 2, splitLine: { show: true, lineStyle: { color: '#333' } }, axisLabel: { formatter: '{value}' } }
+                { gridIndex: 3, scale: false, min: 0, splitNumber: 2, splitLine: { show: true, lineStyle: { color: '#333' } }, axisLabel: { formatter: '{value}' } },
+                { gridIndex: 4, scale: false, min: 0, splitNumber: 2, splitLine: { show: true, lineStyle: { color: '#333' } }, axisLabel: { formatter: '{value}' } }
             ],
             dataZoom: [
                 {
-                    type: 'inside', xAxisIndex: [0, 1, 2, 3],
+                    type: 'inside', xAxisIndex: [0, 1, 2, 3, 4],
                     start: 85, end: 100,
                     zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: false, preventDefaultMouseMove: true
                 },
                 {
-                    show: true, type: 'slider', xAxisIndex: [0, 1, 2, 3],
+                    show: true, type: 'slider', xAxisIndex: [0, 1, 2, 3, 4],
                     bottom: '1%', height: 20, start: 85, end: 100,
                     textStyle: { color: '#8392A5', fontSize: 10 },
                     borderColor: '#444', fillerColor: 'rgba(80,120,200,0.2)',
@@ -425,12 +397,14 @@
                     type: 'candlestick',
                     data: chartData.values,
                     itemStyle: { color: upColor, color0: downColor, borderColor: upBorderColor, borderColor0: downBorderColor },
+                    /* 暫時關閉圖表紅色陰影與黃綠箭頭
                     markArea: {
                         data: swingData.markArea
                     },
+                    */
                     markPoint: {
                         data: [
-                            ...swingData.markPoint,
+                            // 重新開放預測大頭針
                             ...predictiveBottoms,
                             ...predictiveTops
                         ]
@@ -481,6 +455,21 @@
                             { yAxis: 90, name: '百年黑天鵝', lineStyle: { color: '#fbbf24', type: 'dashed' }, label: { color: '#fbbf24', formatter: '百年黑天鵝(>90)' } },
                             { yAxis: 50, name: '一般股災底', lineStyle: { color: '#ef4444', type: 'dashed' }, label: { color: '#ef4444', formatter: '一般股災底(>50)' } },
                             { yAxis: 25, name: '市場失控警戒', lineStyle: { color: '#888', type: 'dotted' }, label: { color: '#888', formatter: '市場失控(>25)' } }
+                        ]
+                    }
+                },
+                {
+                    name: '貪婪逃頂指數', type: 'line', xAxisIndex: 4, yAxisIndex: 4,
+                    data: greedScores, smooth: true, showSymbol: false,
+                    lineStyle: { width: 2, color: '#10b981' }, // 翡翠綠
+                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1,
+                        [{offset: 0, color: 'rgba(16, 185, 129, 0.5)'}, {offset: 1, color: 'rgba(16, 185, 129, 0.05)'}]) },
+                    markLine: {
+                        symbol: ['none', 'none'],
+                        label: { show: true, position: 'insideStartTop' },
+                        data: [
+                            { yAxis: 90, name: '極度貪婪 (閃崩前兆)', lineStyle: { color: '#ec4899', type: 'dashed' }, label: { color: '#ec4899', formatter: '極度貪婪(>90)' } },
+                            { yAxis: 70, name: '高點警戒', lineStyle: { color: '#10b981', type: 'dotted' }, label: { color: '#10b981', formatter: '高點警戒(>70)' } }
                         ]
                     }
                 }
