@@ -16,6 +16,21 @@ def calculate_rsi(data, window=60):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
+def calculate_adl(df):
+    # Accumulation/Distribution Line (ADL)
+    # Uses price and volume to show money flow
+    mfm = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / (df['High'] - df['Low'])
+    mfm = mfm.fillna(0)
+    mfv = mfm * df['Volume']
+    adl = mfv.cumsum()
+    return adl
+
+def calculate_proxy_pcr(df):
+    # Proxy Put/Call Ratio (PCR)
+    # yfinance doesn't provide historical PCR. We use VIX as a proxy since they are highly correlated.
+    # PCR usually ranges between 0.5 and 1.5, with spikes during panics.
+    return (df['VIX'] / 20) + 0.5
+
 def batch_download(ticker, start_year=2007):
     start_date = f"{start_year}-01-01"
     end_date = (datetime.now() + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
@@ -44,8 +59,12 @@ def prepare_data(ticker_name, index_symbol):
     df_merged['VIX'] = df_merged['VIX'].ffill()
     df_merged = df_merged.dropna(subset=['Close', 'VIX', 'RSI60'])
     
+    # Add new indicators
+    df_merged['ADL'] = calculate_adl(df_merged)
+    df_merged['PCR'] = calculate_proxy_pcr(df_merged)
+    
     # Pre-format for ECharts
-    # [date, open, close, lowest, highest, volume, vix, rsi]
+    # [date, open, close, lowest, highest, volume, vix, rsi, adl, pcr]
     output_data = []
     for date, row in df_merged.iterrows():
         date_str = date.strftime('%Y-%m-%d')
@@ -57,7 +76,9 @@ def prepare_data(ticker_name, index_symbol):
             round(row['High'], 2),
             int(row['Volume']) if 'Volume' in row and not pd.isna(row['Volume']) else 0,
             round(row['VIX'], 2),
-            round(row['RSI60'], 2)
+            round(row['RSI60'], 2),
+            round(row['ADL'], 2),
+            round(row['PCR'], 2)
         ])
     
     with open(f'{ticker_name}_data.json', 'w') as f:

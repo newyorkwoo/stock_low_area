@@ -28,10 +28,19 @@ def fetch_market_data():
         delta = data['Close'].diff()
         gain = delta.clip(lower=0)
         loss = -delta.clip(upper=0)
-        ema_gain = gain.ewm(alpha=1/window, min_periods=window, adjust=False).mean()
-        ema_loss = loss.ewm(alpha=1/window, min_periods=window, adjust=False).mean()
+        ema_gain = gain.ewm(
+            alpha=1/window, min_periods=window, adjust=False).mean()
+        ema_loss = loss.ewm(
+            alpha=1/window, min_periods=window, adjust=False).mean()
         rs = ema_gain / ema_loss
         return 100 - (100 / (1 + rs))
+
+    def calculate_adl(df):
+        hl_range = (df['High'] - df['Low']).replace(0, 1e-10)
+        mfm = ((df['Close'] - df['Low']) -
+               (df['High'] - df['Close'])) / hl_range
+        mfv = mfm * df['Volume'].fillna(0)
+        return mfv.cumsum()
 
     def prepare(symbol):
         start = "2007-01-01"
@@ -47,6 +56,7 @@ def fetch_market_data():
         df = df.join(vix['Close'].rename('VIX'), how='left')
         df['VIX'] = df['VIX'].ffill()
         df = df.dropna(subset=['Close', 'VIX', 'RSI60'])
+        df['ADL'] = calculate_adl(df)
         result = []
         for date, row in df.iterrows():
             result.append([
@@ -57,7 +67,8 @@ def fetch_market_data():
                 round(float(row['High']), 2),
                 int(row['Volume']) if not pd.isna(row['Volume']) else 0,
                 round(float(row['VIX']), 2),
-                round(float(row['RSI60']), 2)
+                round(float(row['RSI60']), 2),
+                round(float(row['ADL']), 0)
             ])
         return result
 
@@ -72,7 +83,14 @@ with open("index.html", "r", encoding="utf-8") as f:
 twii_json = json.dumps(twii_data)
 nasdaq_json = json.dumps(nasdaq_data)
 
-# Replace the fetch-based loadData with inline data injection
+# Replace the empty _DATA with actual data injection
+old_data = "const _DATA = { twii: [], nasdaq: [] };"
+new_data = "const _DATA = { twii: " + \
+    twii_json + ", nasdaq: " + nasdaq_json + " };"
+
+html = html.replace(old_data, new_data)
+
+# Remove old loadData function and replace with simpler version
 old_load = (
     "    // ─── 資料載入 ──────────────────────────────────────────────────────────────\n"
     "    async function loadData(market) {\n"
@@ -92,12 +110,16 @@ old_load = (
 )
 
 new_load = (
-    "    const _DATA = { twii: " + twii_json + ", nasdaq: " + nasdaq_json + " };\n"
+    "    // ─── 資料載入 ──────────────────────────────────────────────────────────────\n"
+    "    // 數據已由 Python 端內聯注入\n"
     "    async function loadData(market) {\n"
     "        document.getElementById('loading').style.display = 'flex';\n"
     "        try {\n"
     "            const titles = { twii: '台灣加權指數 (^TWII)', nasdaq: '那斯達克指數 (^IXIC)' };\n"
     "            renderChart(_DATA[market], titles[market]);\n"
+    "        } catch (error) {\n"
+    "            console.error('Error loading data:', error);\n"
+    "            alert('數據載入失敗，請重新整理頁面。');\n"
     "        } finally {\n"
     "            document.getElementById('loading').style.display = 'none';\n"
     "        }\n"
@@ -106,4 +128,4 @@ new_load = (
 
 html = html.replace(old_load, new_load)
 
-components.html(html, height=960, scrolling=False)
+components.html(html, height=1080, scrolling=False)
