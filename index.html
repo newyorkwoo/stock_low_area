@@ -263,89 +263,6 @@
             return result;
         }
 
-        // ─── 波段高低點標示 ──────────────────────────────────────────────────────────────
-        function getSwingRegions(chartData) {
-            let markArea = [];
-            let markPoint = [];
-            let state = 1, peakIdx = 0, troughIdx = 0;
-            const REVERSAL = 0.05; // 5% 反轉
-            for (let i = 0; i < chartData.values.length; i++) {
-                let high = chartData.values[i][3], low = chartData.values[i][2], close = chartData.values[i][1];
-                if (state === 1) {
-                    if (high > chartData.values[peakIdx][3]) peakIdx = i;
-                    if ((chartData.values[peakIdx][3] - close) / chartData.values[peakIdx][3] >= REVERSAL) {
-                        state = -1; troughIdx = i;
-                    }
-                } else {
-                    if (low < chartData.values[troughIdx][2]) troughIdx = i;
-                    if ((close - chartData.values[troughIdx][2]) / chartData.values[troughIdx][2] >= REVERSAL) {
-                        let drop = (chartData.values[peakIdx][3] - chartData.values[troughIdx][2]) / chartData.values[peakIdx][3];
-                        if (drop >= 0.08) { // 跌幅大於 8% 的波段
-                            markArea.push([
-                                { xAxis: chartData.categoryData[peakIdx], itemStyle: { color: 'rgba(239, 68, 68, 0.15)' } },
-                                { xAxis: chartData.categoryData[troughIdx] }
-                            ]);
-                            markPoint.push({
-                                name: '波段高點',
-                                coord: [chartData.categoryData[peakIdx], chartData.values[peakIdx][3]],
-                                value: chartData.values[peakIdx][3].toFixed(0),
-                                symbol: 'path://M12 2L22 20H2L12 2Z',
-                                symbolSize: 8,
-                                symbolRotate: 180,
-                                symbolOffset: [0, -15],
-                                itemStyle: { color: '#facc15' },
-                                label: { color: '#facc15', position: 'top', fontSize: 10 }
-                            });
-                            markPoint.push({
-                                name: '波段低點',
-                                coord: [chartData.categoryData[troughIdx], chartData.values[troughIdx][2]],
-                                value: chartData.values[troughIdx][2].toFixed(0) + '\n(-' + (drop * 100).toFixed(1) + '%)',
-                                symbol: 'path://M12 2L22 20H2L12 2Z',
-                                symbolSize: 8,
-                                symbolRotate: 0,
-                                symbolOffset: [0, 15],
-                                itemStyle: { color: '#00da3c' },
-                                label: { color: '#00da3c', position: 'bottom', fontSize: 10, align: 'center', lineHeight: 12 }
-                            });
-                        }
-                        state = 1; peakIdx = i;
-                    }
-                }
-            }
-            if (state === -1) {
-                let drop = (chartData.values[peakIdx][3] - chartData.values[troughIdx][2]) / chartData.values[peakIdx][3];
-                if (drop >= 0.08) {
-                    markArea.push([
-                        { xAxis: chartData.categoryData[peakIdx], itemStyle: { color: 'rgba(239, 68, 68, 0.15)' } },
-                        { xAxis: chartData.categoryData[troughIdx] }
-                    ]);
-                    markPoint.push({
-                        name: '波段高點',
-                        coord: [chartData.categoryData[peakIdx], chartData.values[peakIdx][3]],
-                        value: chartData.values[peakIdx][3].toFixed(0),
-                        symbol: 'path://M12 2L22 20H2L12 2Z',
-                        symbolSize: 8,
-                        symbolRotate: 180,
-                        symbolOffset: [0, -15],
-                        itemStyle: { color: '#facc15' },
-                        label: { color: '#facc15', position: 'top', fontSize: 10 }
-                    });
-                    markPoint.push({
-                        name: '波段低點',
-                        coord: [chartData.categoryData[troughIdx], chartData.values[troughIdx][2]],
-                        value: chartData.values[troughIdx][2].toFixed(0) + '\n(-' + (drop * 100).toFixed(1) + '%)',
-                        symbol: 'path://M12 2L22 20H2L12 2Z',
-                        symbolSize: 8,
-                        symbolRotate: 0,
-                        symbolOffset: [0, 15],
-                        itemStyle: { color: '#00da3c' },
-                        label: { color: '#00da3c', position: 'bottom', fontSize: 10, align: 'center', lineHeight: 12 }
-                    });
-                }
-            }
-            return { markArea, markPoint };
-        }
-
         // ─── 領先預測指標：恐慌抄底大頭針 (基於 VIX/RSI 恐慌指數) ─────────────────────────
         function getPredictiveBottoms(chartData, panicScores) {
             let points = [];
@@ -377,44 +294,6 @@
                                 name: '短線超跌底', coord: [chartData.categoryData[i], low], value: '小幅修正',
                                 index: i, symbol: 'pin', symbolSize: 25, symbolRotate: 180, symbolOffset: [0, -10],
                                 itemStyle: { color: '#f97316' }, label: { fontSize: 8, color: '#fff', fontWeight: 'bold' } // 橘色
-                            });
-                        }
-                    }
-                }
-            }
-            return points;
-        }
-
-        // ─── 領先預測指標：貪婪逃頂大頭針 (基於 RSI/VIX 貪婪指數) ─────────────────────────
-        function getPredictiveTops(chartData, greedScores) {
-            let points = [];
-            for (let i = 120; i < chartData.values.length; i++) {
-                let score = parseFloat(greedScores[i]);
-                let prevScore = parseFloat(greedScores[i - 1]);
-                let high = chartData.values[i][3];
-
-                // 尋找「貪婪轉折點」：昨天的分數突破警戒線，今天分數開始下降（動能衰退或 VIX 偷溜）
-                if (prevScore > 60 && score < prevScore) {
-                    if (points.length === 0 || i - points[points.length - 1].index > 10) {
-
-                        if (prevScore > 90) {
-                            points.push({
-                                name: '極度貪婪', coord: [chartData.categoryData[i], high], value: '閃崩前兆',
-                                index: i, symbol: 'pin', symbolSize: 55, symbolOffset: [0, 10],
-                                itemStyle: { color: '#ec4899' }, label: { fontSize: 10, color: '#fff', fontWeight: 'bold' }
-                            });
-                        } else if (prevScore > 70) {
-                            points.push({
-                                name: '高點警戒', coord: [chartData.categoryData[i], high], value: '貪婪反轉',
-                                index: i, symbol: 'pin', symbolSize: 40, symbolOffset: [0, 10],
-                                itemStyle: { color: '#10b981' }, label: { fontSize: 9, color: '#fff', fontWeight: 'bold' }
-                            });
-                        } else {
-                            // 新增：抓出小波段高點過熱 (Greed Score > 60)
-                            points.push({
-                                name: '短線過熱', coord: [chartData.categoryData[i], high], value: '小幅過熱',
-                                index: i, symbol: 'pin', symbolSize: 25, symbolOffset: [0, 10],
-                                itemStyle: { color: '#3b82f6' }, label: { fontSize: 8, color: '#fff', fontWeight: 'bold' } // 藍色
                             });
                         }
                     }
@@ -553,27 +432,6 @@
             return { bottoms, tops };
         }
 
-        // ─── PCR 極端值偵測（轉折訊號）────────────────────────────────────────────
-        function getPCRSignals(chartData, pcrData) {
-            const FEAR_THR = 2.0, GREED_THR = 0.4, MIN_GAP = 10;
-            let bottoms = [], tops = [];
-            for (let i = 1; i < chartData.values.length; i++) {
-                if (pcrData[i] === '-' || pcrData[i - 1] === '-') continue;
-                let cur = pcrData[i], prev = pcrData[i - 1];
-                // PCR 高峰回落 → 恐慌退潮
-                if (prev >= FEAR_THR && cur < prev) {
-                    if (bottoms.length === 0 || i - bottoms[bottoms.length - 1].index >= MIN_GAP)
-                        bottoms.push({ index: i, date: chartData.categoryData[i], price: chartData.values[i][2] });
-                }
-                // PCR 低谷回升 → 自滿破裂
-                if (prev <= GREED_THR && cur > prev) {
-                    if (tops.length === 0 || i - tops[tops.length - 1].index >= MIN_GAP)
-                        tops.push({ index: i, date: chartData.categoryData[i], price: chartData.values[i][3] });
-                }
-            }
-            return { bottoms, tops };
-        }
-
         // ─── 指標面板更新（idx 預設最後一筆；點選 K 棒時傳入指定索引）────────────────
         function updateIndicatorsPanel(chartData, panicScores, greedScores, adlNorm, idx) {
             const last = chartData.values.length - 1;
@@ -661,42 +519,23 @@
             const chartData = splitData(data);
             const ma60Data = calculateMA(60, chartData.values);
             const ma240Data = calculateMA(240, chartData.values);
-            const swingData = getSwingRegions(chartData);
 
             // 動態支撐線與情緒指數
             const dynamicSupports = getDynamicSupports(chartData, ma240Data);
             const panicScores = calculatePanicScore(chartData, ma60Data, ma240Data);
             const greedScores = calculateGreedScore(chartData);
 
-            // ADL 與 PCR 指標
+            // ADL 指標
             const adlNorm = normalizeADL(chartData.adlRaw, 60);
             const pcrData = calculatePricePCR(chartData, 10);
             const adlDiv = getADLDivergenceSignals(chartData, adlNorm);
-            const pcrSig = getPCRSignals(chartData, pcrData);
 
-            // 預測點位 (恐慌/貪婪 + ADL背離 + PCR訊號)
+            // K線標示：恐慌反轉點 + ADL多頭背離
             const predictiveBottoms = getPredictiveBottoms(chartData, panicScores);
-            const predictiveTops = getPredictiveTops(chartData, greedScores);
-
             const adlBottomMarks = adlDiv.bottoms.map(s => ({
                 name: 'ADL多頭背離', coord: [s.date, s.price], value: 'ADL↑',
                 index: s.index, symbol: 'diamond', symbolSize: 18, symbolOffset: [0, -12],
                 itemStyle: { color: '#22d3ee' }, label: { fontSize: 8, color: '#22d3ee', fontWeight: 'bold' }
-            }));
-            const adlTopMarks = adlDiv.tops.map(s => ({
-                name: 'ADL空頭背離', coord: [s.date, s.price], value: 'ADL↓',
-                index: s.index, symbol: 'diamond', symbolSize: 18, symbolOffset: [0, 12],
-                itemStyle: { color: '#22d3ee' }, label: { fontSize: 8, color: '#22d3ee', fontWeight: 'bold', position: 'bottom' }
-            }));
-            const pcrBottomMarks = pcrSig.bottoms.map(s => ({
-                name: 'PCR恐慌退潮', coord: [s.date, s.price], value: 'PCR↑',
-                index: s.index, symbol: 'circle', symbolSize: 14, symbolOffset: [0, -22],
-                itemStyle: { color: '#a855f7' }, label: { fontSize: 8, color: '#a855f7', fontWeight: 'bold' }
-            }));
-            const pcrTopMarks = pcrSig.tops.map(s => ({
-                name: 'PCR自滿破裂', coord: [s.date, s.price], value: 'PCR↓',
-                index: s.index, symbol: 'circle', symbolSize: 14, symbolOffset: [0, 22],
-                itemStyle: { color: '#a855f7' }, label: { fontSize: 8, color: '#a855f7', fontWeight: 'bold', position: 'bottom' }
             }));
 
             const option = {
@@ -784,11 +623,7 @@
                         markPoint: {
                             data: [
                                 ...predictiveBottoms,
-                                ...predictiveTops,
-                                ...adlBottomMarks,
-                                ...adlTopMarks,
-                                ...pcrBottomMarks,
-                                ...pcrTopMarks
+                                ...adlBottomMarks
                             ]
                         }
                     },
