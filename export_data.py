@@ -26,12 +26,6 @@ def calculate_adl(df):
     adl = mfv.cumsum()
     return adl
 
-def calculate_proxy_pcr(df):
-    # Proxy Put/Call Ratio (PCR)
-    # yfinance doesn't provide historical PCR. We use VIX as a proxy since they are highly correlated.
-    # PCR usually ranges between 0.5 and 1.5, with spikes during panics.
-    return (df['VIX'] / 20) + 0.5
-
 def batch_download(ticker, start_year=2007):
     start_date = f"{start_year}-01-01"
     end_date = (datetime.now() + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
@@ -62,7 +56,6 @@ def prepare_data(ticker_name, index_symbol, taiwan_vix=None):
 
     # Add new indicators
     df_merged['ADL'] = calculate_adl(df_merged)
-    df_merged['PCR'] = calculate_proxy_pcr(df_merged)
 
     # Pre-format for ECharts
     # [date, open, close, lowest, highest, volume, vix, rsi, adl, pcr, vix_is_real]
@@ -72,6 +65,9 @@ def prepare_data(ticker_name, index_symbol, taiwan_vix=None):
         date_str = date.strftime('%Y-%m-%d')
         real_vix = (taiwan_vix or {}).get(date_str)
         vix_value = real_vix if real_vix is not None else row['VIX']
+        # PCR is a proxy derived from whichever VIX value is actually used for
+        # this row, so it stays consistent with real Taiwan VIX days too.
+        pcr_value = (vix_value / 20) + 0.5
         output_data.append([
             date_str,
             round(row['Open'], 2),
@@ -82,7 +78,7 @@ def prepare_data(ticker_name, index_symbol, taiwan_vix=None):
             round(vix_value, 2),
             round(row['RSI60'], 2),
             round(row['ADL'], 2),
-            round(row['PCR'], 2),
+            round(pcr_value, 2),
             1 if real_vix is not None else 0
         ])
 
