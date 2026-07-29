@@ -4,6 +4,7 @@ import json
 import yfinance as yf
 import pandas as pd
 from datetime import datetime
+from taiwan_vix import fetch_taiwan_vix
 
 st.set_page_config(
     page_title="歷史指數互動式看板",
@@ -42,7 +43,7 @@ def fetch_market_data():
         mfv = mfm * df['Volume'].fillna(0)
         return mfv.cumsum()
 
-    def prepare(symbol):
+    def prepare(symbol, taiwan_vix=None):
         start = "2007-01-01"
         end = (datetime.now() + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
         df = yf.Ticker(symbol).history(start=start, end=end)
@@ -59,20 +60,26 @@ def fetch_market_data():
         df['ADL'] = calculate_adl(df)
         result = []
         for date, row in df.iterrows():
+            date_str = date.strftime('%Y-%m-%d')
+            real_vix = (taiwan_vix or {}).get(date_str)
+            vix_value = real_vix if real_vix is not None else float(row['VIX'])
             result.append([
-                date.strftime('%Y-%m-%d'),
+                date_str,
                 round(float(row['Open']), 2),
                 round(float(row['Close']), 2),
                 round(float(row['Low']), 2),
                 round(float(row['High']), 2),
                 int(row['Volume']) if not pd.isna(row['Volume']) else 0,
-                round(float(row['VIX']), 2),
+                round(vix_value, 2),
                 round(float(row['RSI60']), 2),
-                round(float(row['ADL']), 0)
+                round(float(row['ADL']), 0),
+                1 if real_vix is not None else 0
             ])
         return result
 
-    return prepare("^TWII"), prepare("^IXIC")
+    # 台指選擇權波動率指數：TAIFEX 官方只公開最近幾個月，其餘沿用美股 VIX 當替代指標
+    taiwan_vix = fetch_taiwan_vix()
+    return prepare("^TWII", taiwan_vix=taiwan_vix), prepare("^IXIC")
 
 
 twii_data, nasdaq_data = fetch_market_data()

@@ -200,7 +200,7 @@
                         <td id="badge-greed"><span class="badge badge-gray">--</span></td>
                     </tr>
                     <tr>
-                        <td class="ind-name" style="color:#f59e0b">VIX 恐慌指數</td>
+                        <td class="ind-name" style="color:#f59e0b">VIX 恐慌指數 <sup id="val-vix-source" style="font-size:10px;color:#888;font-weight:normal">--</sup></td>
                         <td class="ind-value" id="val-vix">--</td>
                         <td class="ind-rule">低點飆高再下降 = 恐慌觸發 → 緩解的標準模式</td>
                         <td id="badge-vix"><span class="badge badge-gray">--</span></td>
@@ -239,7 +239,7 @@
 
         // ─── 資料解析 ──────────────────────────────────────────────────────────────
         function splitData(rawData) {
-            let categoryData = [], values = [], vixData = [], rsiData = [], adlRaw = [];
+            let categoryData = [], values = [], vixData = [], rsiData = [], adlRaw = [], vixIsReal = [];
             for (let i = 0; i < rawData.length; i++) {
                 const item = rawData[i];
                 categoryData.push(item[0]);
@@ -247,8 +247,10 @@
                 vixData.push(item[6]);
                 rsiData.push(item[7]);
                 adlRaw.push(item[8] != null ? item[8] : 0);
+                // 最後一欄：1 = 台指選擇權波動率指數(TAIFEX官方)，0 = 美股 VIX 替代
+                vixIsReal.push(item[item.length - 1] === 1);
             }
-            return { categoryData, values, vixData, rsiData, adlRaw };
+            return { categoryData, values, vixData, rsiData, adlRaw, vixIsReal };
         }
 
         // ─── 移動平均 ──────────────────────────────────────────────────────────────
@@ -485,6 +487,11 @@
             // VIX
             if (!isNaN(vix)) {
                 setVal('val-vix', vix.toFixed(2), vix > 30 ? '#f87171' : vix > 20 ? '#fbbf24' : '#9ca3af');
+                const vixSourceEl = document.getElementById('val-vix-source');
+                vixSourceEl.textContent = chartData.vixIsReal[n] ? '(台指)' : '(美股代理)';
+                vixSourceEl.title = chartData.vixIsReal[n]
+                    ? '台灣期交所官方臺指選擇權波動率指數'
+                    : 'TAIFEX 台指VIX僅公開近期資料，此日期以美股 CBOE VIX 作為替代指標';
                 if (vix > 40)                    setBadge('badge-vix', 'red',    '⚠ 極度恐慌');
                 else if (vix > 30)               setBadge('badge-vix', 'red',    '恐慌');
                 else if (prevVix > 25 && vix < prevVix * 0.9)
@@ -654,7 +661,22 @@
                         areaStyle: {
                             color: new echarts.graphic.LinearGradient(0, 0, 0, 1,
                                 [{ offset: 0, color: 'rgba(245,158,11,0.5)' }, { offset: 1, color: 'rgba(245,158,11,0.05)' }])
-                        }
+                        },
+                        markLine: (() => {
+                            // 標示美股VIX代理資料 → 台指官方VIX的切換點（TAIFEX僅公開近期資料）
+                            const firstRealIdx = chartData.vixIsReal.indexOf(true);
+                            if (firstRealIdx <= 0) return { data: [] };
+                            return {
+                                symbol: ['none', 'none'],
+                                label: { show: true, position: 'insideStartTop', fontSize: 9, color: '#f59e0b' },
+                                lineStyle: { color: '#f59e0b', type: 'dotted' },
+                                data: [{
+                                    xAxis: chartData.categoryData[firstRealIdx],
+                                    name: '台指VIX起點',
+                                    label: { formatter: '此後為台指官方VIX，之前為美股VIX代理' }
+                                }]
+                            };
+                        })()
                     },
                     {
                         name: 'RSI(60)', type: 'line', xAxisIndex: 2, yAxisIndex: 2,

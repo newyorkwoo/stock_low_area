@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import time
 from datetime import datetime
+from taiwan_vix import fetch_taiwan_vix
 
 def calculate_rsi(data, window=60):
     delta = data['Close'].diff()
@@ -48,26 +49,29 @@ def batch_download(ticker, start_year=2007):
         
     return pd.DataFrame()
 
-def prepare_data(ticker_name, index_symbol):
+def prepare_data(ticker_name, index_symbol, taiwan_vix=None):
     print(f"Fetching {ticker_name}...")
     df = batch_download(index_symbol, 2007)
     vix = batch_download("^VIX", 2007)
-    
+
     df['RSI60'] = calculate_rsi(df, 60)
-    
+
     df_merged = df.join(vix['Close'].rename('VIX'), how='left')
     df_merged['VIX'] = df_merged['VIX'].ffill()
     df_merged = df_merged.dropna(subset=['Close', 'VIX', 'RSI60'])
-    
+
     # Add new indicators
     df_merged['ADL'] = calculate_adl(df_merged)
     df_merged['PCR'] = calculate_proxy_pcr(df_merged)
-    
+
     # Pre-format for ECharts
-    # [date, open, close, lowest, highest, volume, vix, rsi, adl, pcr]
+    # [date, open, close, lowest, highest, volume, vix, rsi, adl, pcr, vix_is_real]
+    # vix_is_real: 1 = official TAIFEX 臺指選擇權波動率指數, 0 = US CBOE ^VIX used as proxy
     output_data = []
     for date, row in df_merged.iterrows():
         date_str = date.strftime('%Y-%m-%d')
+        real_vix = (taiwan_vix or {}).get(date_str)
+        vix_value = real_vix if real_vix is not None else row['VIX']
         output_data.append([
             date_str,
             round(row['Open'], 2),
@@ -75,18 +79,23 @@ def prepare_data(ticker_name, index_symbol):
             round(row['Low'], 2),
             round(row['High'], 2),
             int(row['Volume']) if 'Volume' in row and not pd.isna(row['Volume']) else 0,
-            round(row['VIX'], 2),
+            round(vix_value, 2),
             round(row['RSI60'], 2),
             round(row['ADL'], 2),
-            round(row['PCR'], 2)
+            round(row['PCR'], 2),
+            1 if real_vix is not None else 0
         ])
-    
+
     with open(f'{ticker_name}_data.json', 'w') as f:
         json.dump(output_data, f)
     print(f"Saved {ticker_name}_data.json")
 
 def main():
-    prepare_data("twii", "^TWII")
+    print("Fetching official TAIFEX Taiwan VIX (recent months only)...")
+    taiwan_vix = fetch_taiwan_vix()
+    print(f"Got {len(taiwan_vix)} real Taiwan VIX days: "
+          f"{min(taiwan_vix) if taiwan_vix else 'n/a'} ~ {max(taiwan_vix) if taiwan_vix else 'n/a'}")
+    prepare_data("twii", "^TWII", taiwan_vix=taiwan_vix)
     prepare_data("nasdaq", "^IXIC")
 
 if __name__ == "__main__":
