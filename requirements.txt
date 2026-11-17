@@ -1,4 +1,4 @@
-yfinance
+yfinance>=1.5.2
 pandas
 streamlit
 requests
